@@ -2166,7 +2166,7 @@ clone_or_update_repos() {
 # shellcheck disable=SC2120
 FTLinstall() {
     # Local, named variables
-    local str="Downloading and Installing FTL"
+    local str="Android FTL Install "
     printf "  %b %s..." "${INFO}" "${str}"
 
     # Move into the temp ftl directory
@@ -2191,10 +2191,22 @@ FTLinstall() {
         url="https://ftl.pi-hole.net/${ftlBranch}"
     fi
 
-    if curl -sSL --fail "${url}/${binary}" -o "${binary}"; then
-        # If the download worked, get sha1 of the binary we just downloaded for verification.
-        curl -sSL --fail "${url}/${binary}.sha1" -o "${binary}.sha1"
+    # Build FTL from source
+    git clone --quiet --depth=1 https://github.com/pi-hole/FTL.git ; cd FTL
+    # CentOS-on-Android Environmnet Fixups
+    sed -i 's/cmake/cmake3/g' build.sh
+    sed -i '/BUS_MCEERR_AR/d' src/signals.c
+    sed -i '/BUS_MCEERR_AO/d' src/signals.c
+    sed -i 's/--dirty//g'     src/gen_version.cmake
+    # Disable load average alerts if only 1 CPU found, likely not reporting idle cores.
+    [ $(nproc) -eq 1 ] && sed -i 's/config.check.load = read_bool(buffer, true)/config.check.load = read_bool(buffer, false)/g' src/config.c
+    # Build pihole-FTL with CentOS 7 GCC 9 toolchain
+    scl enable devtoolset-9 ./build.sh >> ${installLogLoc} ; cd ..
 
+    if cp ./FTL/pihole-FTL "${binary}"; then
+        # If the compile worked, get sha1 of the binary we just built.
+        sha1sum "${binary}" > "${binary}.sha1"
+        
         # If we downloaded binary file (as opposed to text),
         if sha1sum --status --quiet -c "${binary}".sha1; then
             printf "transferred... "
