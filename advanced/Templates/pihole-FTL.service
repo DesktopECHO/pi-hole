@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 ### BEGIN INIT INFO
 # Provides:          pihole-FTL
 # Required-Start:    $remote_fs $syslog $network
@@ -9,11 +9,17 @@
 # Description:       Enable service provided by pihole-FTL daemon
 ### END INIT INFO
 
-FTLUSER=pihole
-PIDFILE=/run/pihole-FTL.pid
+#source utils.sh for getFTLPIDFile(), getFTLPID (), getFTLAPIPortFile()
+PI_HOLE_SCRIPT_DIR="/opt/pihole"
+utilsfile="${PI_HOLE_SCRIPT_DIR}/utils.sh"
+. "${utilsfile}"
+
 
 is_running() {
-    pgrep -o "pihole-FTL" > /dev/null 2>&1
+  if [ -d "/proc/${FTL_PID}" ]; then
+    return 0
+  fi
+  return 1
 }
 
 
@@ -23,27 +29,39 @@ start() {
     echo "pihole-FTL is already running"
   else
     # Touch files to ensure they exist (create if non-existing, preserve if existing)
-    touch /var/log/pihole-FTL.log /var/log/pihole.log
-    touch /run/pihole-FTL.pid /run/pihole-FTL.port
-    touch /etc/pihole/dhcp.leases
-    mkdir -p /run/pihole
-    mkdir -p /var/log/pihole
-    chown pihole:pihole /run/pihole /var/log/pihole
-    # Remove possible leftovers from previous pihole-FTL processes
-    rm -f /dev/shm/FTL-* 2> /dev/null
-    rm /run/pihole/FTL.sock 2> /dev/null
+    mkdir -pm 0755 /run/pihole /var/log/pihole
+    [ ! -f "${FTL_PID_FILE}" ] && install -D -m 644 -o pihole -g pihole /dev/null "${FTL_PID_FILE}"
+    [ ! -f "${FTL_PORT_FILE}" ] && install -D -m 644 -o pihole -g pihole /dev/null "${FTL_PORT_FILE}"
+    [ ! -f /var/log/pihole/FTL.log ] && install -m 644 -o pihole -g pihole /dev/null /var/log/pihole/FTL.log
+    [ ! -f /var/log/pihole/pihole.log ] && install -m 640 -o pihole -g pihole /dev/null /var/log/pihole/pihole.log
+    [ ! -f /etc/pihole/dhcp.leases ] && install -m 644 -o pihole -g pihole /dev/null /etc/pihole/dhcp.leases
     # Ensure that permissions are set so that pihole-FTL can edit all necessary files
-    chown pihole:pihole /run/pihole-FTL.pid /run/pihole-FTL.port
-    chown pihole:pihole /etc/pihole /etc/pihole/dhcp.leases 2> /dev/null
-    chown pihole:pihole /var/log/pihole-FTL.log /var/log/pihole.log
-    chmod 0644 /var/log/pihole-FTL.log /run/pihole-FTL.pid /run/pihole-FTL.port /var/log/pihole.log
+    chown pihole:pihole /run/pihole /etc/pihole /var/log/pihole /var/log/pihole/FTL.log /var/log/pihole/pihole.log /etc/pihole/dhcp.leases
+    # Ensure that permissions are set so that pihole-FTL can edit the files. We ignore errors as the file may not (yet) exist
+    chmod -f 0644 /etc/pihole/macvendor.db /etc/pihole/dhcp.leases /var/log/pihole/FTL.log
+    chmod -f 0640 /var/log/pihole/pihole.log
     # Chown database files to the user FTL runs as. We ignore errors as the files may not (yet) exist
-    chown pihole:pihole /etc/pihole/pihole-FTL.db /etc/pihole/gravity.db 2> /dev/null
-    if setcap CAP_NET_BIND_SERVICE,CAP_NET_RAW,CAP_NET_ADMIN,CAP_SYS_NICE+eip "$(which pihole-FTL)"; then
-      su -s /bin/sh -c "/usr/bin/pihole-FTL" "$FTLUSER"
+    chown -f pihole:pihole /etc/pihole/pihole-FTL.db /etc/pihole/gravity.db /etc/pihole/macvendor.db
+    # Chown database file permissions so that the pihole group (web interface) can edit the file. We ignore errors as the files may not (yet) exist
+    chmod -f 0664 /etc/pihole/pihole-FTL.db
+
+    # Backward compatibility for user-scripts that still expect log files in /var/log instead of /var/log/pihole/
+    # Should be removed with Pi-hole v6.0
+    if [ ! -f /var/log/pihole.log ]; then
+        ln -s /var/log/pihole/pihole.log /var/log/pihole.log
+        chown -h pihole:pihole /var/log/pihole.log
+
+    fi
+    if [ ! -f /var/log/pihole-FTL.log ]; then
+        ln -s /var/log/pihole/FTL.log /var/log/pihole-FTL.log
+        chown -h pihole:pihole /var/log/pihole-FTL.log
+    fi
+
+    if setcap CAP_NET_BIND_SERVICE,CAP_NET_RAW,CAP_NET_ADMIN,CAP_SYS_NICE,CAP_IPC_LOCK,CAP_CHOWN+eip "/usr/bin/pihole-FTL"; then
+      su -s /bin/sh -c "/usr/bin/pihole-FTL" pihole || exit $?
     else
       echo "Warning: Starting pihole-FTL as root because setting capabilities is not supported on this system"
-      pihole-FTL
+      /usr/bin/pihole-FTL || exit $?
     fi
     echo
   fi
@@ -52,27 +70,28 @@ start() {
 # Stop the service
 stop() {
   if is_running; then
-    pkill -o pihole-FTL
-    for i in {1..5}; do
+    kill "${FTL_PID}"
+    for i in 1 2 3 4 5; do
       if ! is_running; then
         break
       fi
 
-      echo -n "."
+      printf "."
       sleep 1
     done
     echo
 
     if is_running; then
       echo "Not stopped; may still be shutting down or shutdown may have failed, killing now"
-      pkill -o -9 pihole-FTL
-      exit 1
+      kill -9 "${FTL_PID}"
     else
       echo "Stopped"
     fi
   else
     echo "Not running"
   fi
+  # Cleanup
+  rm -f /run/pihole/FTL.sock /dev/shm/FTL-* "${FTL_PID_FILE}" "${FTL_PORT_FILE}"
   echo
 }
 
@@ -89,6 +108,14 @@ status() {
 
 
 ### main logic ###
+
+# Get file paths
+FTL_PID_FILE="$(getFTLPIDFile)"
+FTL_PORT_FILE="$(getFTLAPIPortFile)"
+
+# Get FTL's current PID
+FTL_PID="$(getFTLPID ${FTL_PID_FILE})"
+
 case "$1" in
   stop)
         stop
@@ -101,7 +128,7 @@ case "$1" in
         start
         ;;
   *)
-        echo $"Usage: $0 {start|stop|restart|reload|status}"
+        echo "Usage: $0 {start|stop|restart|reload|status}"
         exit 1
 esac
 

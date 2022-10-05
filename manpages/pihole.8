@@ -11,8 +11,6 @@ Pi-hole : A black-hole for internet advertisements
 .br
 \fBpihole -a\fR (\fB-c|-f|-k\fR)
 .br
-\fBpihole -a -e\fR email
-.br
 \fBpihole -a -i\fR interface
 .br
 \fBpihole -a -l\fR privacylevel
@@ -56,7 +54,7 @@ Available commands and options:
 
 \fB-w, whitelist\fR [options] [<domain1> <domain2 ...>]
 .br
-    Adds or removes specified domain or domains tho the Whitelist
+    Adds or removes specified domain or domains to the Whitelist
 .br
 
 \fB-b, blacklist\fR [options] [<domain1> <domain2 ...>]
@@ -133,9 +131,6 @@ Available commands and options:
 .br
       -k, kelvin        Set Kelvin as preferred temperature unit
 .br
-      -e, email         Set an administrative contact address for the
-                        Block Page
-.br
       -i, interface     Specify dnsmasq's interface listening behavior
 .br
       -l, privacylevel  <level> Set privacy level
@@ -187,12 +182,12 @@ Available commands and options:
 
 	(Logging options):
 .br
-      on                Enable the Pi-hole log at /var/log/pihole.log
+      on                Enable the Pi-hole log at /var/log/pihole/pihole.log
 .br
       off               Disable and flush the Pi-hole log at
-                        /var/log/pihole.log
+                        /var/log/pihole/pihole.log
 .br
-      off noflush       Disable the Pi-hole log at /var/log/pihole.log
+      off noflush       Disable the Pi-hole log at /var/log/pihole/pihole.log
 .br
 
 \fB-up, updatePihole\fR [--check-only]
